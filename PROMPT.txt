@@ -1,0 +1,9 @@
+这周批改学生的氧化实验报告时发现一处对不上：有两组同学在截面照片里明明看到膜层起了孔洞，调接口时也在请求里写了 dense:false，服务给出的抛物律适用性却还是"PBR 大于一且膜致密，适用"。我自己在容器里试了几轮，情况如下。
+
+先存一个参数组：PUT /materials/fe-scale，请求体 {"parabolicRateConstant":16,"density":5700,"pillingBedworthRatio":1.7,"dense":true}。再 POST /oxide/parabolic，请求体 {"material":"fe-scale","time":4,"dense":false}。返回的膜厚 8 µm、单位面积质量增益 0.0456 kg/m² 都没问题，可 parabolicApplicability 里 parabolicApplicable 是 true，reason 写的是膜致密。反过来，组里存 dense:false、请求里写 dense:true，结论又一律按不致密给。整个过程不报错，返回看上去就是一个正常结论，学生根本察觉不到。
+
+下面几种对照反而都正常：不引用参数组，直接在请求里给 pillingBedworthRatio:1.7 和 dense:false，判为不适用；引用组但请求里不提 dense，按组里存的值判；同样引用 fe-scale，只在请求里把 pillingBedworthRatio 改成 0.8，立刻按 0.8 判为不适用；GET /materials/fe-scale 读回来的也是当初存进去的原样。
+
+我希望的效果是：引用参数组时，请求里显式写出的值就是这次计算用的值，组里存的只当缺省，而且只影响本次请求、不回写到组里；两边都没给时维持现有的缺省判定。按上面的复现，修好后应返回 parabolicApplicable=false，reason 说明膜不致密；组里 false、请求 true 时按致密判。其它能存进参数组的字段也请一并核一遍，覆盖语义要前后一致。膜厚、质量增益、温度修正、分压修正、线性入口这些合法用法，结果一个数都不能变；两组参数交替引用时仍要各算各的，互不串值。
+
+仓库现有测试要保持全绿。另外补一批新用例，把"组里给或不给、请求里给或不给、两边相同或相反"这几种组合钉住，要从 HTTP 请求一路打到返回结果，不能只测判定那一步。
